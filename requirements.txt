@@ -1,0 +1,9 @@
+# Core dependencies
+jericho
+python-dotenv
+
+# MCP Server
+fastmcp
+
+# Function calling (optional, for the alternative approach)
+langchain-core

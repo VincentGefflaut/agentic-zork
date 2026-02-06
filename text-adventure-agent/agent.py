@@ -102,30 +102,50 @@ class RunResult:
 # System Prompt - Customize this for your agent
 # =============================================================================
 
-SYSTEM_PROMPT = """You are playing a classic text adventure game.
+SYSTEM_PROMPT = """You are an expert text adventure game player. Your goal is to explore, collect treasures, and maximize your score.
 
-GOAL: Explore the world, solve puzzles, and maximize your score.
-
-AVAILABLE TOOLS (use via MCP):
-- play_action: Execute a game command (north, take lamp, open mailbox, etc.)
-- memory: Get current game state and history (if implemented)
-- inventory: Check what you're carrying (if implemented)
+AVAILABLE TOOLS (use these via MCP):
+1. play_action - Execute game commands (north, take lamp, open mailbox, etc.)
+2. memory - Get current game state, score, and recent history
+3. get_map - See explored locations and connections
+4. inventory - Check what you're carrying
 
 VALID GAME COMMANDS for play_action:
 - Movement: north, south, east, west, up, down, enter, exit
 - Objects: take <item>, drop <item>, open <thing>, close <thing>, examine <thing>
-- Other: look, inventory, read <thing>, turn on lamp
+- Light: turn on lamp, turn off lamp
+- Combat: attack <enemy> with <weapon>
+- Other: inventory, look, read <thing>, wait
+
+FORBIDDEN (will NOT work): check, inspect, search, grab, use, help
 
 RESPOND IN THIS EXACT FORMAT (no markdown):
-THOUGHT: <your reasoning about what to do next>
+THOUGHT: <brief reasoning about what to do next>
 TOOL: <tool_name>
-ARGS: <JSON arguments, e.g., {"action": "look"}>
+ARGS: <JSON arguments>
 
-Example:
-THOUGHT: I should look around to see where I am.
+Examples:
+THOUGHT: I need to see what's around me.
 TOOL: play_action
 ARGS: {"action": "look"}
-"""
+
+THOUGHT: Let me check my current state and score.
+TOOL: memory
+ARGS: {}
+
+THOUGHT: The mailbox might contain something useful.
+TOOL: play_action
+ARGS: {"action": "open mailbox"}
+
+STRATEGY:
+1. Start by looking around and checking memory
+2. Explore systematically - try all directions
+3. Pick up useful items (lamp, sword, etc.)
+4. Open containers (mailbox, window, etc.)
+5. Use get_map to avoid getting lost
+6. Turn on lamp before dark areas!
+
+DO NOT repeat the same action multiple times in a row."""
 
 
 # =============================================================================
@@ -149,7 +169,9 @@ class StudentAgent:
         # TODO: Initialize any state tracking you need
         # self.history = []
         # self.visited_locations = set()
-        pass
+        self.history: list[dict] = []
+        self.recent_actions: list[str] = []
+        self.score: int = 0
     
     async def run(
         self,
@@ -199,52 +221,151 @@ class StudentAgent:
         # Placeholder implementation - replace with your code
         locations_visited = set()
         history = []
-        final_score = 0
         moves = 0
         
         # TODO: Your implementation here
         # ...
         
         return RunResult(
-            final_score=final_score,
-            max_score=350,  # Zork1 max score, adjust if needed
+            final_score=self.score,
+            max_score=350,
             moves=moves,
             locations_visited=locations_visited,
-            game_completed=False,
+            game_completed=self._is_game_over(observation),
             history=history,
         )
     
-    def _build_prompt(self, observation: str, history: list) -> str:
-        """
-        Build the prompt for the LLM.
+    def _build_prompt(self, observation: str) -> str:
+        """Build the prompt for the LLM with context."""
+        parts = []
         
-        TODO: Implement this to create effective prompts
-        """
-        # TODO: Combine system prompt, history, and current observation
-        pass
+        parts.append(f"Current Score: {self.score}")
+        
+        # Recent history
+        if self.history:
+            parts.append("\nRecent actions:")
+            for entry in self.history[-3:]:
+                action = entry.get("args", {}).get("action", entry["tool"])
+                result_short = entry["result"][:80] + "..." if len(entry["result"]) > 80 else entry["result"]
+                parts.append(f"  > {action} -> {result_short}")
+            
+            # Warn about repeated actions
+            if self.recent_actions and len(set(self.recent_actions[-3:])) == 1:
+                parts.append(f"\n[WARNING: You've been doing '{self.recent_actions[-1]}' repeatedly. TRY SOMETHING DIFFERENT!]")
+        
+        parts.append(f"\nCurrent situation:\n{observation}")
+        parts.append("\nWhat do you do next?")
+        
+        return "\n".join(parts)
     
-    def _parse_response(self, response: str) -> tuple[str, str, dict]:
-        """
-        Parse LLM response to extract thought, tool name, and arguments.
+    def _parse_response(self, response: str, valid_tools: list[str]) -> tuple[str, str, dict]:
+        """Parse the LLM response to extract thought, tool, and arguments."""
+        thought = "No reasoning provided"
+        tool_name = "play_action"
+        tool_args = {"action": "look"}
         
-        TODO: Implement robust parsing
+        lines = response.strip().split("\n")
         
-        Returns:
-            Tuple of (thought, tool_name, args_dict)
-        """
-        # TODO: Parse the response format:
-        # THOUGHT: ...
-        # TOOL: ...
-        # ARGS: {...}
-        pass
+        for line in lines:
+            line_clean = line.strip()
+            line_upper = line_clean.upper()
+            
+            if line_upper.startswith("THOUGHT:"):
+                thought = line_clean.split(":", 1)[1].strip()
+            
+            elif line_upper.startswith("TOOL:"):
+                raw_tool = line_clean.split(":", 1)[1].strip().lower()
+                raw_tool = raw_tool.replace("**", "").replace("*", "").replace("`", "")
+                raw_tool = raw_tool.split()[0] if raw_tool else "play_action"
+                tool_name = raw_tool
+            
+            elif line_upper.startswith("ARGS:"):
+                args_part = line_clean.split(":", 1)[1].strip()
+                try:
+                    args_part = args_part.replace("'", '"')
+                    tool_args = json.loads(args_part)
+                except json.JSONDecodeError:
+                    match = re.search(r'"action"\s*:\s*"([^"]+)"', args_part)
+                    if match:
+                        tool_args = {"action": match.group(1)}
+                    else:
+                        tool_args = {"action": "look"}
+        
+        return thought, tool_name, tool_args
     
-    def _call_llm(self, prompt: str, system_prompt: str, seed: int) -> str:
-        """
-        Call the LLM with the given prompt.
+    def _validate_tool_call(self, tool_name: str, tool_args: dict, valid_tools: list[str]) -> tuple[str, dict]:
+        """Validate and fix common tool call issues."""
+        # Fix tool name
+        if tool_name not in valid_tools:
+            if tool_name in ["action", "do", "command"]:
+                tool_name = "play_action"
+            elif tool_name in ["map", "location"]:
+                tool_name = "get_map"
+            elif tool_name in ["mem", "state", "status"]:
+                tool_name = "memory"
+            elif tool_name in ["inv", "items"]:
+                tool_name = "inventory"
+            else:
+                tool_name = "play_action"
         
-        This is a convenience wrapper - you can also use call_llm() directly.
-        """
-        return call_llm(prompt, system_prompt, seed)
+        # Fix action verbs
+        if tool_name == "play_action":
+            action = tool_args.get("action", "look")
+            
+            invalid_verb_map = {
+                "check": "examine",
+                "inspect": "examine",
+                "search": "look",
+                "grab": "take",
+                "pick": "take",
+                "use": "examine",
+                "investigate": "examine",
+            }
+            
+            words = action.lower().split()
+            if words and words[0] in invalid_verb_map:
+                words[0] = invalid_verb_map[words[0]]
+                action = " ".join(words)
+            
+            action = action.lower().strip()
+            action = action.replace("**", "").replace("*", "").replace("`", "")
+            action = " ".join(action.split())
+            
+            tool_args["action"] = action
+        
+        return tool_name, tool_args
+    
+    def _extract_result(self, result) -> str:
+        """Extract text from MCP tool result."""
+        if hasattr(result, 'content') and result.content:
+            return result.content[0].text
+        if isinstance(result, list) and result:
+            return result[0].text if hasattr(result[0], 'text') else str(result[0])
+        return str(result)
+    
+    def _update_score(self, text: str) -> None:
+        """Update score from game text."""
+        patterns = [
+            r'Score:\s*(\d+)',
+            r'score[:\s]+(\d+)',
+            r'\[Score:\s*(\d+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                self.score = max(self.score, int(match.group(1)))
+    
+    def _is_game_over(self, text: str) -> bool:
+        """Check if the game is over."""
+        game_over_phrases = [
+            "game over",
+            "you have died",
+            "you are dead",
+            "*** you have died ***",
+        ]
+        text_lower = text.lower()
+        return any(phrase in text_lower for phrase in game_over_phrases)
 
 
 # =============================================================================
@@ -271,7 +392,7 @@ async def test_agent():
         
         print(f"\nFinal Score: {result.final_score}")
         print(f"Moves: {result.moves}")
-        print(f"Locations: {result.locations_visited}")
+        print(f"Locations: {len(result.locations_visited)}")
 
 
 if __name__ == "__main__":

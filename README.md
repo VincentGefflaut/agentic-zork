@@ -8,6 +8,7 @@ sdk_version: 6.3.0
 app_file: app.py
 pinned: false
 license: mit
+hf_oauth: true
 ---
 
 # Text Adventure LLM Agent Project
@@ -20,8 +21,9 @@ This project provides:
 
 1. **MCP Server** - Exposes text adventure games as MCP tools using FastMCP
 2. **ReAct Agent** - An agent that uses MCP tools to play games with reasoning
-3. **Templates** - Starter code for students to implement their own solutions
-4. **57 Games** - Zork trilogy, Infocom classics, and many more Z-machine games
+3. **Submission Template** - Starter code for students to implement their own solutions
+4. **Evaluation System** - Deterministic evaluation with seeded runs
+5. **57 Games** - Zork trilogy, Infocom classics, and many more Z-machine games
 
 ## Architecture
 
@@ -43,7 +45,17 @@ This project provides:
 
 ## Quick Start
 
-### 1. Setup
+### 1. Download Game Files
+
+The Z-machine game files are not included in this repository. Clone them from the BYU-PCCL repository:
+
+```bash
+git clone https://github.com/BYU-PCCL/z-machine-games z-machine-games-master
+```
+
+This provides 57 classic text adventure games including the Zork trilogy, Colossal Cave Adventure, Enchanter, and more.
+
+### 2. Setup
 
 ```bash
 # Create virtual environment (using uv recommended)
@@ -60,112 +72,132 @@ cp .env.example .env
 
 Get your HuggingFace token at: https://huggingface.co/settings/tokens
 
-### 2. Run an Agent
+### 3. Run an Agent
 
 ```bash
-# MCP mode (recommended) - uses FastMCP Client
-python run_agent.py --mode mcp
+# Run the example MCP agent
+python run_agent.py
 
-# Basic ReAct agent (direct game interaction)
-python run_agent.py --mode react
+# Play a different game
+python run_agent.py --game advent
 
-# Function calling mode
-python run_agent.py --mode function --simple
+# Verbose output
+python run_agent.py -v
+
+# Limit steps
+python run_agent.py -n 50
+
+# List all 57 games
+python run_agent.py --list-games
 ```
 
 ## Project Structure
 
 ```
 .
-+-- run_agent.py              # Unified agent runner
-+-- mcp_server/
-|   +-- zork_server.py        # Full MCP server with all tools
-+-- agents/
-|   +-- base_agent.py         # Abstract base class
-|   +-- react_agent.py        # Basic ReAct agent (no MCP)
-|   +-- mcp_react_agent.py    # MCP-enabled ReAct agent
-+-- templates/                # Student templates
++-- run_agent.py              # Agent runner
++-- app.py                    # Gradio interface
++-- evaluation/               # Evaluation system
+|   +-- evaluate.py           # Evaluation CLI (local and HF Spaces)
+|   +-- runner.py             # Agent execution
+|   +-- metrics.py            # Result tracking
++-- example_submission/       # Working example submission
+|   +-- agent.py              # Full ReAct agent implementation
+|   +-- mcp_server.py         # Full MCP server implementation
++-- submission_template/      # Student templates (HF Space template)
 |   +-- README.md             # Assignment instructions
-|   +-- mcp_server_template.py    # MCP server starter
-|   +-- react_agent_template.py   # Agent starter
-+-- function_calling/         # Alternative: function calling
-|   +-- controller.py
-|   +-- simple_controller.py
-|   +-- tools.py
+|   +-- agent.py              # Agent starter code
+|   +-- mcp_server.py         # MCP server starter code
+|   +-- app.py                # HF Spaces Gradio app
+|   +-- requirements.txt      # Space dependencies
 +-- games/
 |   +-- zork_env.py           # Jericho wrapper
 +-- z-machine-games-master/   # Game files
 ```
 
-## Agent Modes
+## Student Submission Workflow (Hugging Face Spaces)
 
-| Mode | Description | Command |
-|------|-------------|---------|
-| `mcp` | MCP ReAct agent (FastMCP Client) | `--mode mcp` |
-| `react` | Basic ReAct (direct game) | `--mode react` |
-| `function` | Function calling (API) | `--mode function` |
-| `function --simple` | Function calling (text) | `--mode function --simple` |
+### For Students
 
-### Examples
+1. **Fork the template Space** on Hugging Face:
+   ```
+   https://huggingface.co/spaces/[COURSE]/text-adventure-template
+   ```
 
-```bash
-# Run MCP agent with verbose output
-python run_agent.py --mode mcp -v
+2. **Clone your fork locally**:
+   ```bash
+   git clone https://huggingface.co/spaces/YOUR_USERNAME/text-adventure-agent
+   cd text-adventure-agent
+   ```
 
-# Run with different model
-python run_agent.py --mode mcp --model google/gemma-2-2b-it
+3. **Implement your agent** in `agent.py` and `mcp_server.py`
 
-# Limit steps
-python run_agent.py --mode mcp -n 50
+4. **Test locally**:
+   ```bash
+   # Test MCP server interactively
+   fastmcp dev mcp_server.py
+   
+   # Run your agent
+   python run_agent.py --agent . --game zork1 -v -n 20
+   ```
 
-# Play different games
-python run_agent.py --mode mcp --game zork2
-python run_agent.py --mode mcp --game advent     # Colossal Cave Adventure
-python run_agent.py --mode mcp --game enchanter  # Infocom classic
-python run_agent.py --mode mcp --game hhgg       # Hitchhiker's Guide
+5. **Push to your Space**:
+   ```bash
+   git add -A
+   git commit -m "Implement my agent"
+   git push
+   ```
 
-# List all 57 available games
-python run_agent.py --list-games
-```
+6. **Submit** your Space URL on the course platform
 
-## MCP Server Tools
+### For Instructors
 
-The MCP server exposes these tools:
-
-| Tool | Description |
-|------|-------------|
-| `play_action(action)` | Execute a game command (north, take lamp, etc.) |
-| `memory()` | Get current state (location, score, history) |
-| `get_map()` | View explored locations and connections |
-| `inventory()` | Check items you're carrying |
-| `valid_actions()` | Get command hints |
-| `reset_game(game)` | Start over or switch games |
-| `list_games()` | See all 57 available games |
-| `hint()` | Get contextual hints |
-
-### Testing the MCP Server
+Evaluate student submissions from their HF Spaces:
 
 ```bash
-# Run server directly (stdio transport) - default game is zork1
-python mcp_server/zork_server.py
+# Evaluate a single Space
+python evaluation/evaluate.py --hf-space student1/text-adventure-agent -g zork1 -t 5
 
-# Run with a specific game
-GAME=advent python mcp_server/zork_server.py
+# Evaluate a local submission
+python evaluation/evaluate.py -s ./example_submission -g zork1 -t 5
 
-# Use MCP Inspector for interactive testing
-npx @modelcontextprotocol/inspector python mcp_server/zork_server.py
-
-# Use FastMCP dev mode
-fastmcp dev mcp_server/zork_server.py
+# Batch evaluate multiple local submissions
+python evaluation/evaluate.py --submissions-dir ./all_submissions -g zork1 -o results.json
 ```
 
-## Student Assignment
+## Assignment
 
-See [templates/README.md](templates/README.md) for the assignment.
+See [submission_template/README.md](submission_template/README.md) for the assignment instructions.
 
-Students implement:
-1. **MCP Server** (`mcp_server_template.py`) - Expose game functionality as MCP tools
-2. **ReAct Agent** (`react_agent_template.py`) - Play text adventures using MCP
+You need to implement:
+1. **MCP Server** (`mcp_server.py`) - Expose game functionality as MCP tools
+2. **ReAct Agent** (`agent.py`) - Play text adventures using MCP tools
+
+A working example is provided in `example_submission/`.
+
+## Evaluation
+
+Run the evaluator to test submissions:
+
+```bash
+# Evaluate a submission
+python evaluation/evaluate.py -s ./submission_template -g zork1 -t 5
+
+# Evaluate the example
+python evaluation/evaluate.py -s ./example_submission -g zork1 -t 3
+
+# Evaluate multiple games
+python evaluation/evaluate.py -s ./example_submission -g zork1 advent enchanter -t 3
+
+# Save results to JSON
+python evaluation/evaluate.py -s ./example_submission -g zork1 -t 3 -o results.json
+```
+
+Metrics:
+- **Score**: Points earned in-game (averaged over trials)
+- **Score %**: Score / Max possible score
+- **Steps**: Number of actions taken
+- **Time**: Elapsed time
 
 ## Configuration
 
@@ -176,39 +208,14 @@ Create `.env` from `.env.example`:
 ```bash
 # Required: HuggingFace token
 HF_TOKEN=hf_your_token_here
-
-# Optional: Model override (default: meta-llama/Llama-3.2-3B-Instruct)
-HF_MODEL=meta-llama/Llama-3.2-3B-Instruct
 ```
 
-### Recommended Models
+### Fixed Model
 
-| Model | Notes |
-|-------|-------|
-| `meta-llama/Llama-3.2-3B-Instruct` | Default, good balance |
-| `google/gemma-2-2b-it` | Smaller, faster |
-| `Qwen/Qwen2.5-7B-Instruct` | Good instruction following |
-
-## Evaluation
-
-Run the evaluator to test agent performance:
-
-```bash
-python evaluate.py --mode mcp --games zork1 --runs 3
-```
-
-Metrics:
-- **Score**: Points earned in-game
-- **Score %**: Score / Max possible score
-- **Steps**: Number of actions taken
-- **Time**: Elapsed time
-
-## Resources
-
-- [FastMCP Documentation](https://gofastmcp.com/)
-- [MCP Protocol](https://modelcontextprotocol.io/)
-- [Jericho (Text Adventures)](https://github.com/microsoft/jericho)
-- [HuggingFace Inference API](https://huggingface.co/docs/huggingface_hub/guides/inference)
+All submissions use the same model for fairness:
+- **Model**: `Qwen/Qwen2.5-72B-Instruct`
+- **Temperature**: `0.0` (deterministic)
+- **Seed**: Provided for reproducibility
 
 ## License
 

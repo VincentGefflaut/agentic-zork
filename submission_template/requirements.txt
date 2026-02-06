@@ -1,0 +1,9 @@
+# HF Spaces already has gradio and huggingface_hub pre-installed
+# Do not add them here or you may get version conflicts
+
+# Agent dependencies (these are provided by the evaluation infrastructure)
+# Do not add jericho, fastmcp here - they are installed during evaluation
+
+# Add any additional packages your agent needs below:
+# numpy
+# requests

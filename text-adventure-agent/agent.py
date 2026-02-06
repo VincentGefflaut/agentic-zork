@@ -222,9 +222,97 @@ class StudentAgent:
         locations_visited = set()
         history = []
         moves = 0
-        
+
         # TODO: Your implementation here
         # ...
+        # Get list of available tools
+        tools = await client.list_tools()
+        tool_names = [t.name for t in tools]
+        
+        # Get initial observation
+        result = await client.call_tool("play_action", {"action": "look"})
+        observation = self._extract_result(result)
+        
+        # Track initial location
+        location = observation.split("\n")[0] if observation else "Unknown"
+        locations_visited.add(location)
+        
+        if verbose:
+            print(f"\n{observation}")
+        
+        # Main ReAct loop
+        for step in range(1, max_steps + 1):
+            # Build prompt with context
+            prompt = self._build_prompt(observation)
+            
+            # Call LLM for reasoning (use step-based seed for variety)
+            response = call_llm(prompt, SYSTEM_PROMPT, seed + step)
+            
+            # Parse the response
+            thought, tool_name, tool_args = self._parse_response(response, tool_names)
+            
+            if verbose:
+                print(f"\n--- Step {step} ---")
+                print(f"[THOUGHT] {thought}")
+                print(f"[TOOL] {tool_name}({tool_args})")
+            
+            # Validate and fix common issues
+            tool_name, tool_args = self._validate_tool_call(tool_name, tool_args, tool_names)
+            
+            # Loop detection
+            if tool_name == "play_action":
+                action = tool_args.get("action", "look")
+                self.recent_actions.append(action)
+                if len(self.recent_actions) > 5:
+                    self.recent_actions = self.recent_actions[-5:]
+                
+                # Detect loops - if same action 3 times, force "look"
+                if len(self.recent_actions) >= 3 and len(set(self.recent_actions[-3:])) == 1:
+                    if verbose:
+                        print(f"[WARNING] Loop detected - forcing 'look'")
+                    tool_args = {"action": "look"}
+                    self.recent_actions.append("look")
+                
+                moves += 1
+            
+            # Execute the tool
+            try:
+                result = await client.call_tool(tool_name, tool_args)
+                observation = self._extract_result(result)
+                
+                if verbose:
+                    print(f"[RESULT] {observation[:200]}...")
+            except Exception as e:
+                observation = f"Error: {e}"
+                if verbose:
+                    print(f"[ERROR] {e}")
+            
+            # Track location
+            location = observation.split("\n")[0] if observation else "Unknown"
+            locations_visited.add(location)
+            
+            # Update history
+            self.history.append({
+                "step": step,
+                "thought": thought,
+                "tool": tool_name,
+                "args": tool_args,
+                "result": observation[:200]
+            })
+            if len(self.history) > 10:
+                self.history = self.history[-10:]
+            
+            # Track score from observation
+            self._update_score(observation)
+            
+            # Record in result history
+            history.append((thought, f"{tool_name}({tool_args})", observation[:100]))
+            
+            # Check for game over
+            if self._is_game_over(observation):
+                if verbose:
+                    print("\n*** GAME OVER ***")
+                break
         
         return RunResult(
             final_score=self.score,

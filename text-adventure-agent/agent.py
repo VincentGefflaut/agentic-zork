@@ -110,6 +110,7 @@ AVAILABLE TOOLS (use these via MCP):
 2. memory - Get current game state, score, and recent history
 3. get_map - See explored locations and connections
 4. inventory - Check what you're carrying
+5. get_valid_actions - Get a list of likely valid actions from the current location.
 
 VALID GAME COMMANDS for play_action:
 - Movement: north, south, east, west, up, down, enter, exit

@@ -138,66 +138,66 @@ def play_action(action: str) -> str:
     result = game.step(action)
     
     # Optional: Append score info
-    # result += f"\n[Score: {game.get_score()} | Moves: {game.get_moves()}]"
+    result += f"\n[Score: {game.get_score()} | Moves: {game.get_moves()}]"
     
     return result
 
 
 # TODO: Implement additional tools to help your agent
 
-# @mcp.tool()
-# def memory() -> str:
-#     """
-#     Get the current game state summary.
-#     
-#     Returns:
-#         A summary including current location, score, moves, and recent history
-#     """
-#     game = get_game()
-#     # TODO: Return useful state information
-#     pass
+@mcp.tool()
+def memory() -> str:
+    """
+    Get the current game state summary.
+    
+    Returns:
+        A summary including current location, score, moves, and recent history
+    """
+    game = get_game()
+    # TODO: Return useful state information
+    pass
 
 
-# @mcp.tool()
-# def inventory() -> str:
-#     """
-#     Check what the player is carrying.
-#     
-#     Returns:
-#         List of items in the player's inventory
-#     """
-#     game = get_game()
-#     result = game.step("inventory")
-#     return result
+@mcp.tool()
+def inventory() -> str:
+    """
+    Check what the player is carrying.
+    
+    Returns:
+        List of items in the player's inventory
+    """
+    game = get_game()
+    result = game.step("inventory")
+    return result
 
 
-# @mcp.tool()
-# def get_map() -> str:
-#     """
-#     Get a map of explored locations.
-#     
-#     Returns:
-#         A text representation of explored locations and connections
-#     """
-#     game = get_game()
-#     # TODO: Return map of explored locations
-#     pass
+@mcp.tool()
+def get_map() -> str:
+    """
+    Get a map of explored locations.
+    
+    Returns:
+        A text representation of explored locations and connections
+    """
+    game = get_game()
+    # TODO: Return map of explored locations
+    pass
 
 
-# @mcp.tool()
-# def get_valid_actions() -> str:
-#     """
-#     Get a list of likely valid actions from the current location.
-#     
-#     Returns:
-#         List of actions that might work here
-#     """
-#     # This is a hint: Jericho provides get_valid_actions()
-#     game = get_game()
-#     if game.env and game.env.env:
-#         valid = game.env.env.get_valid_actions()
-#         return "Valid actions: " + ", ".join(valid[:20])
-#     return "Could not determine valid actions"
+@mcp.tool()
+def get_valid_actions() -> str:
+    """
+    Get a list of likely valid actions from the current location.
+      
+    Returns:
+        List of actions that might work here
+    """
+    # This is a hint: Jericho provides get_valid_actions()
+    game = get_game()
+    if game.env and game.env.env:
+        valid = game.env.env.get_valid_actions()
+        return "Valid actions: " + ", ".join(valid[:20])
+    return "Could not determine valid actions"
 
 
 # =============================================================================

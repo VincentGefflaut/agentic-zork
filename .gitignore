@@ -145,3 +145,5 @@ dmypy.json
 
 # Z-machine game files
 z-machine-games-master/
+text-adventure-agent/.gitignore_old
+text-adventure-agent/.git_old

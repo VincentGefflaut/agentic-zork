@@ -221,7 +221,11 @@ class StudentAgent:
         moves = 0
 
         # TODO: Your implementation here
-        # ...
+        
+        # Add game name to system prompt hoping the LLM has seen it before
+        global SYSTEM_PROMPT
+        SYSTEM_PROMPT += f"\n\nYou are playing: {game.upper()}"
+
         # Get list of available tools
         tools = await client.list_tools()
         tool_names = [t.name for t in tools]
@@ -334,7 +338,7 @@ class StudentAgent:
             if len(self.history) > 1:
                 parts.append("Actions history:")
                 for entry in self.history[-10:-1]:
-                    parts.append(f"  > {entry['tool']}({entry['args']}) -> {entry['result'][:100]}{"..." if len(entry['result']) > 100 else ""}")
+                    parts.append(f"  > {entry['tool']}({entry['args']}) -> {entry['result'][:1000]}{"..." if len(entry['result']) > 1000 else ""}")
             parts.append("Last action:")
             parts.append(f"  > {self.history[-1]['tool']}({self.history[-1]['args']}) -> {observation}")
 

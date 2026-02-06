@@ -41,6 +41,7 @@ load_dotenv()
 
 # Model to use (fixed for fair evaluation)
 LLM_MODEL = "Qwen/Qwen2.5-72B-Instruct"
+THINK_MODE = False
 
 # Initialize the LLM client (uses HF_TOKEN from environment)
 _hf_token = os.getenv("HF_TOKEN")
@@ -102,7 +103,7 @@ class RunResult:
 # System Prompt - Customize this for your agent
 # =============================================================================
 
-SYSTEM_PROMPT = """You are an expert text adventure game player. Your goal is to explore, collect treasures, and maximize your score.
+SYSTEM_PROMPT = f"""You are an expert text adventure game player. Your goal is to explore, collect treasures, and maximize your score.
 
 AVAILABLE TOOLS (use these via MCP):
 1. play_action - Execute game commands (north, take lamp, open mailbox, etc.)
@@ -119,23 +120,19 @@ VALID GAME COMMANDS for play_action:
 
 FORBIDDEN (will NOT work): check, inspect, search, grab, use, help
 
-RESPOND IN THIS EXACT FORMAT (no markdown):
-THOUGHT: <brief reasoning about what to do next>
+RESPOND IN THIS EXACT FORMAT (no markdown):{"\nTHOUGHT: <brief reasoning about what to do next>" if THINK_MODE else ""}
 TOOL: <tool_name>
 ARGS: <JSON arguments>
 
-Examples:
-THOUGHT: I need to see what's around me.
+Examples:{"\nTHOUGHT: I need to see what's around me." if THINK_MODE else ""}
 TOOL: play_action
-ARGS: {"action": "look"}
-
-THOUGHT: Let me check my current state and score.
+ARGS: {{"action": "look"}}
+{"\nTHOUGHT: Let me check my current state and score." if THINK_MODE else ""}
 TOOL: memory
-ARGS: {}
-
-THOUGHT: The mailbox might contain something useful.
+ARGS: {{}}
+{"\nTHOUGHT: The mailbox might contain something useful." if THINK_MODE else ""}
 TOOL: play_action
-ARGS: {"action": "open mailbox"}
+ARGS: {{"action": "open mailbox"}}
 
 STRATEGY:
 1. Start by looking around and checking memory
@@ -239,13 +236,12 @@ class StudentAgent:
         
         if verbose:
             print(f"\n{observation}")
+            print(f"[SYSTEM PROMPT]:\n{SYSTEM_PROMPT}\n")
         
         # Main ReAct loop
         for step in range(1, max_steps + 1):
             # Build prompt with context
             prompt = self._build_prompt(observation)
-            if verbose:
-                print(f"PROMPT:\n{prompt}")
             
             # Call LLM for reasoning (use step-based seed for variety)
             response = call_llm(prompt, SYSTEM_PROMPT, seed + step)
@@ -255,7 +251,9 @@ class StudentAgent:
             
             if verbose:
                 print(f"\n--- Step {step} ---")
-                print(f"[THOUGHT] {thought}")
+                print(f"PROMPT:\n{prompt}")
+                if THINK_MODE:
+                    print(f"[THOUGHT] {thought}")
                 print(f"[TOOL] {tool_name}({tool_args})")
             
             # Validate and fix common issues

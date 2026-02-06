@@ -244,6 +244,8 @@ class StudentAgent:
         for step in range(1, max_steps + 1):
             # Build prompt with context
             prompt = self._build_prompt(observation)
+            if verbose:
+                print(f"PROMPT:\n{prompt}")
             
             # Call LLM for reasoning (use step-based seed for variety)
             response = call_llm(prompt, SYSTEM_PROMPT, seed + step)
@@ -331,18 +333,18 @@ class StudentAgent:
         
         # Recent history
         if self.history:
-            parts.append("\nRecent actions:")
-            for entry in self.history[-3:]:
-                action = entry.get("args", {}).get("action", entry["tool"])
-                result_short = entry["result"][:80] + "..." if len(entry["result"]) > 80 else entry["result"]
-                parts.append(f"  > {action} -> {result_short}")
-            
+            if len(self.history) > 1:
+                parts.append("Actions history:")
+                for entry in self.history[-10:-1]:
+                    parts.append(f"  > {entry['tool']}({entry['args']}) -> {entry['result'][:100]}{"..." if len(entry['result']) > 100 else ""}")
+            parts.append("Last action:")
+            parts.append(f"  > {self.history[-1]['tool']}({self.history[-1]['args']}) -> {observation}")
+
             # Warn about repeated actions
-            if self.recent_actions and len(set(self.recent_actions[-3:])) == 1:
+            if len(self.recent_actions) >= 3 and len(set(self.recent_actions[-3:])) == 1:
                 parts.append(f"\n[WARNING: You've been doing '{self.recent_actions[-1]}' repeatedly. TRY SOMETHING DIFFERENT!]")
-        
-        parts.append(f"\nCurrent situation:\n{observation}")
-        parts.append("\nWhat do you do next?")
+
+        parts.append("What do you do next?")
         
         return "\n".join(parts)
     

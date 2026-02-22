@@ -27,9 +27,12 @@ Examples:
     python run_agent.py -v
 """
 
+import os
+# Suppress multiprocessing resource tracker warnings (harmless cleanup messages)
+os.environ["PYTHONWARNINGS"] = "ignore::UserWarning"
+
 import argparse
 import sys
-import os
 import asyncio
 from pathlib import Path
 

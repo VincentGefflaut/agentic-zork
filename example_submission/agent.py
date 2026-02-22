@@ -187,9 +187,9 @@ class StudentAgent:
                 # Detect loops - if same action 3 times, force "look"
                 if len(self.recent_actions) >= 3 and len(set(self.recent_actions[-3:])) == 1:
                     if verbose:
-                        print(f"[WARNING] Loop detected - forcing 'look'")
-                    tool_args = {"action": "look"}
-                    self.recent_actions.append("look")
+                        print(f"[WARNING] Loop detected - forcing 'get_valid_actions'")
+                    tool_args = {"action": "get_valid_actions"}
+                    self.recent_actions.append("get_valid_actions")
                 
                 moves += 1
             

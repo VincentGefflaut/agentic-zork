@@ -34,6 +34,10 @@ from fastmcp import FastMCP
 from games.zork_env import TextAdventureEnv
 
 
+# Feature flags
+NOTEPAD = True
+
+
 # =============================================================================
 # Create the MCP Server
 # =============================================================================
@@ -60,9 +64,10 @@ class GameManager:
         self.state = None
         self.game_name: str = ""
         # TODO: Add more state tracking
-        # self.history: list[tuple[str, str]] = []
-        # self.explored_locations: dict[str, set[str]] = {}
-        # self.current_location: str = ""
+        self.history: list[tuple[str, str]] = []
+        self.explored_locations: dict[str, set[str]] = {}
+        self.current_location: str = ""
+        self.notepad: str = ""
     
     def initialize(self, game: str = "zork1"):
         """Initialize or reset the game."""
@@ -70,7 +75,63 @@ class GameManager:
         self.env = TextAdventureEnv(game)
         self.state = self.env.reset()
         # TODO: Reset your state tracking here
+        self.history = []
+        self.explored_locations = {}
+        self.current_location = self._extract_location(
+            self.state.observation,
+            fallback="Starting point"
+        )
+        self.notepad = ""
         return self.state.observation
+    
+    def _extract_location(self, observation: str, fallback: str = "Unknown") -> str:
+        """Extract likely location name from observation text."""
+        if not observation:
+            return fallback
+
+        lines = [line.strip() for line in observation.split("\n") if line.strip()]
+        for line in lines:
+            if self._is_likely_location_name(line):
+                return line
+
+        return fallback
+
+    def _is_likely_location_name(self, text: str) -> bool:
+        """Heuristic check to distinguish room names from status messages."""
+        if not text or len(text) > 80:
+            return False
+
+        if text.startswith("["):
+            return False
+
+        if any(mark in text for mark in [".", "!", "?", ",", ";", ":", '"']):
+            return False
+
+        if not text[0].isalpha() or not text[0].isupper():
+            return False
+
+        return True
+
+    def _is_movement_action(self, action: str) -> bool:
+        """Return True when the action is a movement/navigation command."""
+        action = (action or "").strip().lower()
+        if not action:
+            return False
+
+        movement_commands = {
+            "north", "south", "east", "west", "up", "down",
+            "n", "s", "e", "w", "u", "d",
+            "enter", "exit", "in", "out",
+        }
+
+        if action in movement_commands:
+            return True
+
+        if action.startswith("go "):
+            direction = action[3:].strip()
+            return direction in movement_commands
+
+        return False
     
     def step(self, action: str) -> str:
         """Execute an action and return the result."""
@@ -80,8 +141,21 @@ class GameManager:
         self.state = self.env.step(action)
         
         # TODO: Update your state tracking here
-        # self.history.append((action, self.state.observation))
+        self.history.append((action, self.state.observation))
+
         # Update location tracking, etc.
+        old_location = self.current_location or "Unknown"
+        new_location = self._extract_location(self.state.observation, fallback=old_location)
+        normalized_action = (action or "").strip().lower()
+
+        if self._is_movement_action(normalized_action):
+            if old_location not in self.explored_locations:
+                self.explored_locations[old_location] = set()
+            if new_location != old_location:
+                self.explored_locations[old_location].add(f"{normalized_action} -> {new_location}")
+                self.current_location = new_location
+        elif not self.current_location:
+            self.current_location = new_location
         
         return self.state.observation
     
@@ -92,7 +166,86 @@ class GameManager:
     def get_moves(self) -> int:
         """Get number of moves taken."""
         return self.state.moves if self.state else 0
+    
+    def get_inventory(self) -> str:
+        """Get current inventory."""
+        items = self.state.inventory if hasattr(self.state, 'inventory') and self.state.inventory else []
+        
+        if not items:
+            return "Inventory: You are empty-handed."
+        
+        item_names = []
+        for item in items:
+            item_str = str(item)
+            item_lower = item_str.lower()
+            if "parent" in item_lower:
+                idx = item_lower.index("parent")
+                name = item_str[:idx].strip()
+                if ":" in name:
+                    name = name.split(":", 1)[1].strip()
+                item_names.append(name)
+            elif ":" in item_str:
+                name = item_str.split(":")[1].strip()
+                item_names.append(name)
+            else:
+                item_names.append(item_str)
+        
+        return f"Inventory: {', '.join(item_names)}"
 
+    def get_map(self) -> str:
+        """Get a map of explored locations."""
+        if not self.explored_locations:
+            return "Map: No locations explored yet. Try moving around!"
+        
+        lines = ["Explored Locations and Exits:"]
+        for loc, exits in sorted(self.explored_locations.items(), reverse=True):
+            lines.append(f"\n* {loc}")
+            for exit_info in sorted(exits):
+                lines.append(f"    -> {exit_info}")
+        
+        lines.append(f"\n[Current] {self.current_location}")
+        return "\n".join(lines)
+
+    def get_memory(self) -> str:
+        """Get a summary of current game state."""
+        recent = self.history[-5:] if self.history else []
+        recent_str = "\n".join([f"  > {a} -> {r[:60]}..." for a, r in recent]) if recent else "  (none yet)"
+        
+        return f"""Current State:
+- Location: {self.current_location}
+- Score: {self.state.score} points
+- Moves: {self.state.moves}
+- Game: {self.game_name}
+
+Recent Actions:
+{recent_str}
+
+Current Observation:
+{self.state.observation}"""
+
+    def append_notepad(self, note: str) -> str:
+        """Append a note to the notepad and return full content."""
+        note = (note or "").strip()
+        if not note:
+            return self.notepad
+        if self.notepad:
+            self.notepad += f"\n{note}"
+        else:
+            self.notepad = note
+        return self.notepad
+
+    def replace_in_notepad(self, old_string: str, new_string: str) -> str:
+        """Replace content in the notepad and return full content."""
+        old_string = old_string or ""
+        new_string = new_string or ""
+        if not old_string:
+            return self.notepad
+        self.notepad = self.notepad.replace(old_string, new_string)
+        return self.notepad
+
+    def get_notepad(self) -> str:
+        """Return full notepad content."""
+        return self.notepad
 
 # Global game manager
 _game = GameManager()
@@ -135,27 +288,27 @@ def play_action(action: str) -> str:
     # TODO: You might want to add action validation here
     # TODO: You might want to include score changes in the response
     
+    previous_score = game.get_score()
     result = game.step(action)
-    
-    # Optional: Append score info
-    result += f"\n[Score: {game.get_score()} | Moves: {game.get_moves()}]"
+    current_score = game.get_score()
+    score_diff = current_score - previous_score
+    if score_diff > 0:
+        result += f"\n[You gained {score_diff} points! Total score: {current_score}]"
+    elif score_diff < 0:
+        result += f"\n[You lost {-score_diff} points. Total score: {current_score}]"
     
     return result
-
 
 # TODO: Implement additional tools to help your agent
 
 @mcp.tool()
 def memory() -> str:
     """
-    Get the current game state summary.
+    Get a summary of the current game state.
     
-    Returns:
-        A summary including current location, score, moves, and recent history
+    Returns location, score, moves, recent actions, and current observation.
     """
-    game = get_game()
-    # TODO: Return useful state information
-    pass
+    return get_game().get_memory()
 
 
 @mcp.tool()
@@ -174,14 +327,11 @@ def inventory() -> str:
 @mcp.tool()
 def get_map() -> str:
     """
-    Get a map of explored locations.
+    Get a map showing explored locations and connections.
     
-    Returns:
-        A text representation of explored locations and connections
+    Useful for navigation and avoiding getting lost.
     """
-    game = get_game()
-    # TODO: Return map of explored locations
-    pass
+    return get_game().get_map()
 
 
 @mcp.tool()
@@ -196,8 +346,45 @@ def get_valid_actions() -> str:
     game = get_game()
     if game.env and game.env.env:
         valid = game.env.env.get_valid_actions()
-        return "Valid actions: " + ", ".join(valid[:20])
-    return "Could not determine valid actions"
+        return ", ".join(valid) if valid else ""
+    return ""
+
+@mcp.tool()
+def append_summary(summary: str) -> str:
+    """
+    Append a summary of the current game state to the history.
+    """
+    return summary
+
+
+if NOTEPAD:
+    @mcp.tool()
+    def append_notepad(note: str) -> str:
+        """
+        Append text to the notepad.
+
+        Args:
+            note: Text to append as a new line
+
+        Returns:
+            Full notepad content after update
+        """
+        return get_game().append_notepad(note)
+
+
+    @mcp.tool()
+    def replace_in_notepad(old_string: str, new_string: str) -> str:
+        """
+        Replace text in the notepad.
+
+        Args:
+            old_string: Existing text to replace
+            new_string: Replacement text
+
+        Returns:
+            Full notepad content after replacement
+        """
+        return get_game().replace_in_notepad(old_string, new_string)
 
 
 # =============================================================================
